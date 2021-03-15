@@ -37,15 +37,21 @@ class WindTree(Agent):
         self.wind_speed = wind_speed
         self.wind_directions = [0, 90, 180, 270]
 
+    def calculate_angle(self, p1, p2):
+        dx = p1[0] - p2[0]
+        dy = p1[1] - p2[1]
+        angle = round(math.degrees(math.atan2(dy, dx)))
+        angle = np.argmin(np.abs(np.array(self.wind_directions) - np.array([angle])))
+        angle = self.wind_directions[angle]
+        return angle
+
     def step(self):
         if self.condition == 1:
             neighbors = self.model.grid.get_neighbors(self.coordinates, moore=False, include_center=False)
             for neighbor in neighbors:
                 if neighbor.condition == 0:
-                    dx = neighbor.coordinates[0] - self.coordinates[0]
-                    dy = neighbor.coordinates[1] - self.coordinates[1]
-                    fire_direction = round(math.degrees(math.atan2(dy, dx))) + 45
-                    print(fire_direction)
+
+                    fire_direction = self.calculate_angle(self.coordinates, neighbor.coordinates)
                     wind_direction = np.random.choice(self.wind_directions)
                     spread_proba = self.spread_probability
 
