@@ -15,7 +15,7 @@ to setup
   ask n-of lakes-count patches [ set pcolor blue]
   ask patches with [pcolor = blue] [ask patches in-radius sqrt (lake-square / pi) [set pcolor blue]]
 
-  ask patches with [pxcor = min-pxcor]
+  ask patches with [pxcor = min-pxcor and pcolor = green]
   [set pcolor red]
 
   set initial-trees count patches with [pcolor = green]
@@ -99,7 +99,7 @@ density
 density
 0.0
 99.0
-30.0
+81.0
 1.0
 1
 %
@@ -189,7 +189,7 @@ lake-square
 lake-square
 0
 500
-300.0
+376.0
 1
 1
 NIL
