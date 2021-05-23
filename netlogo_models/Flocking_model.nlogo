@@ -1,18 +1,16 @@
 turtles-own [
   flockmates
   nearest-neighbor
+  bird-groups
+  group-index
 ]
 
 globals [
-  bird-groups
   bird-groups-count
   group-heading-variance
   avg-group-heading
   headings_list
-  indexes_list
-  group-index
   current_index
-
 ]
 
 to setup
@@ -22,7 +20,6 @@ to setup
       set size 1.5
       setxy random-xcor random-ycor
       set flockmates no-turtles
-      set indexes_list []
   ]
   reset-ticks
 end
@@ -32,12 +29,13 @@ to go
   if ticks >= qty_ticks [stop]
   set current_index 1
 
+  repeat 5 [ ask turtles [ fd 0.2 ] display ]
+
   ask turtles [ fd 1 ]
   get-groups-stats
   count-bird-groups
 
   ask turtles [ flock ]
-  repeat 5 [ ask turtles [ fd 0.2 ] display ]
   tick
 end
 
@@ -107,34 +105,36 @@ end
 to get-groups-stats
   ask turtles [
     find-groups
-    set group-index who ;; turtle index where we find a group of birds
+    set group-index who
+  ]
 
-    if length [group-index] of bird-groups > 1 [
+  ask turtles [
+    ask turtles in-radius (5 * minimum-separation) [
       set group-index min [group-index] of bird-groups
-     ]
+    ]
+    set current_index group-index
+  ]
 
+  ask turtles [
     set current_index group-index
     find-average-group-heading
     find-variance-group-heading
-
   ]
 
-  ask one-of turtles with [who = current_index] [
-   set color blue
-   set size 3
+  ask one-of turtles with [group-index = current_index] [
+   set color one-of base-colors
    set label group-index
+   set size 3
   ]
-
-  set indexes_list insert-item 0 indexes_list group-index
 
 end
 
 to count-bird-groups
- set bird-groups-count length (remove-duplicates (indexes_list))
+  set bird-groups-count length (remove-duplicates ([group-index] of turtles))
 end
 
 to find-groups
-  set bird-groups other turtles in-radius (2 * minimum-separation)
+  set bird-groups turtles in-radius (2 * minimum-separation)
 end
 
 to find-average-group-heading
@@ -142,8 +142,8 @@ to find-average-group-heading
 end
 
 to-report average-group-heading
-  let x-component sum [dx] of turtles with [who = current_index]
-  let y-component sum [dy] of turtles with [who = current_index]
+  let x-component sum [dx] of turtles with [group-index = current_index]
+  let y-component sum [dy] of turtles with [group-index = current_index]
   ifelse x-component = 0 and y-component = 0
     [ report heading ]
     [ report atan x-component y-component ]
@@ -155,12 +155,20 @@ to find-variance-group-heading
   set group-heading-variance variance headings_list
   ]
 end
+
+to-report find-avg-heading-for-all-groups
+  report mean (remove-duplicates ([avg-group-heading] of turtles))
+end
+
+to-report find-avg-heading-variance-for-all-groups
+  report mean (remove-duplicates ([group-heading-variance] of turtles))
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
-250
-10
-755
-516
+287
+19
+792
+525
 -1
 -1
 7.0
@@ -226,7 +234,7 @@ population
 population
 1.0
 1000.0
-299.0
+100.0
 1.0
 1
 NIL
@@ -285,7 +293,7 @@ SLIDER
 vision
 vision
 0.0
-10.0
+100
 5.0
 0.5
 1
@@ -300,7 +308,7 @@ SLIDER
 minimum-separation
 minimum-separation
 0.0
-5.0
+10
 1.0
 0.25
 1
@@ -321,10 +329,10 @@ bird-groups-count
 MONITOR
 37
 386
-177
+196
 431
-Avg Heading for Group
-avg-group-heading
+Avg Heading for all groups
+find-avg-heading-for-all-groups
 17
 1
 11
@@ -332,10 +340,10 @@ avg-group-heading
 MONITOR
 25
 446
-190
+210
 491
-Variance Heading for Group
-group-heading-variance
+Variance Heading for all groups
+find-avg-heading-variance-for-all-groups
 17
 1
 11
@@ -349,11 +357,58 @@ qty_ticks
 qty_ticks
 200
 1000
-500.0
+1000.0
 50
 1
 NIL
 HORIZONTAL
+
+MONITOR
+33
+510
+185
+555
+Statistics for group
+word (word (word (word current_index \" | \") round avg-group-heading) \" | \") round group-heading-variance
+17
+1
+11
+
+PLOT
+827
+39
+1027
+189
+Average Heading Plot
+Iteration
+Average Heading
+0.0
+1000.0
+0.0
+500.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot find-avg-heading-for-all-groups"
+
+PLOT
+825
+214
+1025
+364
+Variance of Heading Plot
+Iteration
+Variance of Heading
+0.0
+1000.0
+0.0
+500.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot find-avg-heading-variance-for-all-groups"
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -775,7 +830,7 @@ repeat 200 [ go ]
       <value value="5"/>
     </enumeratedValueSet>
   </experiment>
-  <experiment name="Birds-Groups-Count-Experiment" repetitions="100" runMetricsEveryStep="true">
+  <experiment name="Birds-Groups-Count-Experiment" repetitions="50" runMetricsEveryStep="true">
     <setup>setup</setup>
     <go>go</go>
     <metric>bird-groups-count</metric>
