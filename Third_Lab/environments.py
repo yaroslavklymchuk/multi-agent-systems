@@ -65,13 +65,13 @@ class MazeEnv(gym.Env):
                                      )
 
         if np.array_equal(state, self.maze_view.goal):
-            reward = 100
+            reward = 1
         elif any((np.array_equal(state, location) for location in all_portals_locations)):
-            # reward = -0.4 / (self.maze_size[0]*self.maze_size[1])
-            reward = -10
+            reward = -0.4 / (self.maze_size[0]*self.maze_size[1])
+            #reward = -10
         else:
-            #reward = -0.1 / (self.maze_size[0]*self.maze_size[1])
-            reward = 0
+            reward = -0.1 / (self.maze_size[0]*self.maze_size[1])
+            #reward = 0
 
         return reward
 
@@ -95,7 +95,7 @@ class MazeEnv(gym.Env):
         #                              ])
 
         possible_actions = list(set(possible_actions))
-        print(state, possible_actions)
+        # print(state, possible_actions)
         # else:
         #     possible_actions = [direction for direction in self.maze_view.maze.STEPS.keys()
         #                         if self.maze_view.maze.is_within_bound(

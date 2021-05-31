@@ -235,7 +235,17 @@ class ValueIteration:
     def simulate(self):
 
         self._env.render()
+        # state_0 = self._env.reset()
         num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t = self.get_simulation_parameters()
+
+        total_rewards = []
+        total_streaks = []
+        steps_qty = []
+
+        num_streaks = 0
+        total_reward = 0
+
+        tmp_steps = []
 
         iteration = 0
         while iteration < max_t:
@@ -255,100 +265,118 @@ class ValueIteration:
                     if portal_coordinates is not None:
                         state = portal_coordinates
 
-                    if not len(self.all_possible_actions.get(state)):
+                    all_possible_actions = self.all_possible_actions.get(state)
+                    if not len(all_possible_actions):
                         continue
                     old_value = deepcopy(self.v[state])
-                    new_v = -np.inf
+                    # new_v = -np.inf
 
-                    for action in self.all_possible_actions.get(state):
+                    temp_values = []
+
+                    for action in all_possible_actions:
                         coord = state + np.array(self._env.maze_view.maze.STEPS[action])
 
-                        another_actions = [another_action for another_action in self.all_possible_actions.get(state)
-                                           if another_action != action
-                                           ]
-                        if not another_actions:
-                            continue
-                        random_action = np.random.choice(another_actions)
-                        random_coord = state + np.array(self._env.maze_view.maze.STEPS[random_action])
+                        value = self.v[tuple(coord)]
 
-                        v = self._env.calculate_reward(state) + self.gamma * ((1 - self.epsilon) * self.v[tuple(coord)] +
-                                                                              self.epsilon * self.v[tuple(random_coord)]
-                                                                              )
-                        if v > new_v:
-                            new_v = deepcopy(v)
-                            self.policy[state] = action
+                        if len(all_possible_actions) == 1:
+                            main_prob = 1
+                            additional_prob = 0
+                        else:
+                            main_prob = self.make_action_proba
+                            additional_prob = (1 - self.make_action_proba) / (len(all_possible_actions) - 1)
 
-                    self.v[state] = new_v
+                        # another_actions = [another_action for another_action in self.all_possible_actions.get(state)
+                        #                    if another_action != action
+                        #                    ]
+                        # if not another_actions:
+                        #     continue
+                        # random_action = np.random.choice(another_actions)
+                        # random_coord = state + np.array(self._env.maze_view.maze.STEPS[random_action])
+                        #
+                        # v = self._env.calculate_reward(state) + self.gamma * ((1 - self.epsilon) * self.v[tuple(coord)] +
+                        #                                                       self.epsilon * self.v[tuple(random_coord)]
+                        #                                                       )
+                        # if v > new_v:
+                        #     new_v = deepcopy(v)
+                        #     self.policy[state] = action
+
+                        add_value_sum = 0
+                        for another_action in all_possible_actions:
+                            if another_action != action:
+                                another_coord = state + np.array(self._env.maze_view.maze.STEPS[another_action])
+                                add_value_sum += self.v[tuple(another_coord)]
+
+                        temp_values.append(value * main_prob + additional_prob * add_value_sum)
+
+                    self.v[state] = self._env.calculate_reward(state) + self.gamma * np.max(temp_values)
+                    self.policy[state] = all_possible_actions[np.argmax(temp_values)]
+
                     best_chance = max(best_chance, np.abs(old_value - self.v[state]))
+                    # self.v[state] = new_v
+                    # best_chance = max(best_chance, np.abs(old_value - self.v[state]))
 
+            # print(best_chance)
             if best_chance < self.small:
                 break
             iteration += 1
 
-        print(self.policy)
-        total_rewards = []
-        total_streaks = []
-        steps_qty = []
+            # print(self.policy)
+            # self._env.render()
 
-        num_streaks = 0
+            try:
+                state = self._env.reset()
+            except:
+                state = np.zeros(2)
 
-        # self._env.render()
-
-        state = self._env.reset()
-        total_reward = 0
-
-        tmp_steps = []
-
-        for t in range(max_t):
-            # Select an action
-            action = self.policy[tuple(state)]
-            #print(t, action)
-            # execute the action
-            if np.random.choice([True, False], p=[self.make_action_proba, 1 - self.make_action_proba]):
-                state, reward, done, _ = self._env.step(action)
-                reward = self.v[tuple(state)]
-            else:
-                action = self._env.action_space.sample()
-                state, reward, done, _ = self._env.step(action)
-                reward = self.v[tuple(state)]
-            # Observe the result
-            total_reward += reward
-
-            tmp_steps.append(t)
-
-            if self._debug:
-                if done or t >= max_t - 1:
-                    print("t = %d" % t)
-                    print("Streaks: %d" % num_streaks)
-                    print("Total reward: %f" % total_reward)
-                    print("Average Streaks: %f" % (num_streaks / (t + 1)))
-                    print("Average Rewards: %f" % (total_reward / (t + 1)))
-                    print("")
-
-            if self._render_maze:
-                self._env.render()
-
-            if self._env.is_game_over():
-                sys.exit()
-            if done:
-                print("Finished after %f time steps with total reward = %f (streak %d)."
-                      % (t, total_reward, num_streaks))
-                if t <= solved_t:
-                    num_streaks += 1
+            for t in range(100):
+                # Select an action
+                action = self.policy[tuple(state)]
+                # execute the action
+                if np.random.choice([True, False], p=[self.make_action_proba, 1 - self.make_action_proba]):
+                    state, reward, done, _ = self._env.step(action)
+                    reward = self.v[tuple(state)]
                 else:
-                    num_streaks = 0
-                break
-            elif t >= max_t - 1:
-                print("Timed out at %d with total reward = %f."
-                      % (t, total_reward))
+                    action = self._env.action_space.sample()
+                    state, reward, done, _ = self._env.step(action)
+                    reward = self.v[tuple(state)]
+                # Observe the result
+                total_reward += reward
 
-        # It's considered done when it's solved over 120 times consecutively
-            if num_streaks > self._max_win_streak:
-                break
+                tmp_steps.append(t)
 
-            total_rewards.append(total_reward)
-            total_streaks.append(num_streaks)
-            steps_qty.append(tmp_steps[-1])
+                if self._debug:
+                    if done or t >= max_t - 1:
+                        print("t = %d" % t)
+                        print("Streaks: %d" % num_streaks)
+                        print("Total reward: %f" % total_reward)
+                        print("Average Streaks: %f" % (num_streaks / (t + 1)))
+                        print("Average Rewards: %f" % (total_reward / (t + 1)))
+                        print("")
+
+                if self._render_maze:
+                    self._env.render()
+
+                if self._env.is_game_over():
+                    sys.exit()
+                if done:
+                    print("Finished after %f time steps with total reward = %f (streak %d)."
+                          % (t, total_reward, num_streaks))
+                    if t <= solved_t:
+                        num_streaks += 1
+                    else:
+                        num_streaks = 0
+                    break
+                elif t >= max_t - 1:
+                    print("Timed out at %d with total reward = %f."
+                          % (t, total_reward))
+
+            # It's considered done when it's solved over 120 times consecutively
+                if num_streaks > self._max_win_streak:
+                    break
+
+                total_rewards.append(total_reward)
+                total_streaks.append(num_streaks)
+                steps_qty.append(tmp_steps[-1])
 
         return total_rewards, total_streaks, steps_qty
 
