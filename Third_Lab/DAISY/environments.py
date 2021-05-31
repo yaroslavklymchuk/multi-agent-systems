@@ -1,5 +1,4 @@
 import numpy as np
-from itertools import chain
 
 import gym
 from gym import spaces
@@ -14,14 +13,14 @@ class MazeEnv(gym.Env):
 
     ACTION = ["N", "S", "E", "W"]
 
-    def __init__(self, maze_size=None, num_portals=0, enable_render=True):
+    def __init__(self, maze_size=None, enable_render=True):
 
         self.viewer = None
         self.enable_render = enable_render
 
         self.maze_view = MazeView2D(maze_name="OpenAI Gym - Maze (%d x %d)" % maze_size,
                                     maze_size=maze_size, screen_size=(640, 640),
-                                    num_portals=num_portals, enable_render=enable_render)
+                                    enable_render=enable_render)
 
         self.maze_size = self.maze_view.maze_size
 
@@ -59,36 +58,23 @@ class MazeEnv(gym.Env):
         return np.array_equal(state, self.maze_view.goal)
 
     def calculate_reward(self, state):
-        all_portals_locations = list(chain(*[[location for location in portal.locations]
-                                             for portal in self.maze_view.maze.portals]
-                                           )
-                                     )
 
         if np.array_equal(state, self.maze_view.goal):
             reward = 1
-        elif any((np.array_equal(state, location) for location in all_portals_locations)):
-            reward = -0.4 / (self.maze_size[0]*self.maze_size[1])
-            #reward = -10
         else:
             reward = -0.1 / (self.maze_size[0]*self.maze_size[1])
             #reward = 0
 
         return reward
 
-    def get_all_possible_actions(self, state):
-        possible_actions = [direction for direction in self.maze_view.maze.STEPS.keys()
-                            if self.maze_view.maze.is_open(state, direction)
-                            ]
-
-        possible_actions = list(set(possible_actions))
-
-        return possible_actions
-
     def step(self, action):
         if isinstance(action, int):
             self.maze_view.move_robot(self.ACTION[action])
+            self.maze_view.move_turtle(self.ACTION[action])
+
         else:
             self.maze_view.move_robot(action)
+            self.maze_view.move_turtle(action)
 
         done = self.check_done(self.maze_view.robot)
         reward = self.calculate_reward(self.maze_view.robot)
@@ -98,6 +84,16 @@ class MazeEnv(gym.Env):
         info = {}
 
         return self.state, reward, done, info
+
+    def get_all_possible_actions(self, state):
+
+        possible_actions = [direction for direction in self.maze_view.maze.STEPS.keys()
+                            if self.maze_view.maze.is_open(state, direction)
+                            ]
+
+        possible_actions = list(set(possible_actions))
+
+        return possible_actions
 
     def reset(self):
         self.maze_view.reset_robot()

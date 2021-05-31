@@ -2,13 +2,14 @@ import pygame
 import numpy as np
 
 from maze import Maze
+from copy import deepcopy
 
 
 class MazeView2D:
 
     def __init__(self, maze_name="Maze2D",
-                 maze_size=(30, 30), screen_size=(1000, 1000),
-                 num_portals=0, enable_render=True):
+                 maze_size=(30, 30), screen_size=(600, 600),
+                 enable_render=True):
 
         # PyGame configurations
         pygame.init()
@@ -17,7 +18,7 @@ class MazeView2D:
         self.__game_over = False
         self.__enable_render = enable_render
 
-        self.__maze = Maze(maze_size=maze_size, num_portals=num_portals)
+        self.__maze = Maze(maze_size=maze_size)
 
         self.maze_size = self.__maze.maze_size
         if self.__enable_render is True:
@@ -31,29 +32,33 @@ class MazeView2D:
         # Set the Goal
         self.__goal = np.array(self.maze_size) - np.array((1, 1))
 
-        # Create the Robot
-        self.__robot = self.entrance
+        # Set the Robot (box)
+        self.__robot = self.entrance + np.array((1, 0))
 
         # Load a background
-        background = pygame.image.load('icons/space.jpg')
-        background = pygame.transform.scale(background, (1000, 1000))
+        background = pygame.image.load('ocean.jpg')
+        background = pygame.transform.scale(background, (700, 700))
 
         # Load a entrance
-        self.entr = pygame.image.load('icons/entrance.png')
+        self.entr = pygame.image.load('entrance.png')
+        self.entr = pygame.transform.scale(self.entr, (64, 64))
 
         # Load a exit
-        self.exit = pygame.image.load('icons/exit.png')
+        self.exit = pygame.image.load('end.png')
+        self.exit = pygame.transform.scale(self.exit, (64, 64))
 
         # Load a player
-        self.player = pygame.image.load('icons/ufo_space.png')
+        self.player_box = pygame.image.load('wooden_box.png')
+        self.player_box = pygame.transform.scale(self.player_box, (45, 45))
 
-        # Load a hole
-        self.hole = pygame.image.load('icons/black_hole.png')
-        self.hole = pygame.transform.scale(self.hole, (64, 64))
+        # Load a turtle
+        self.player_turtle = pygame.image.load('turtle.png')
+        # self.box = pygame.transform.scale(self.box, (45, 45))
+        self.player2 = self.entrance
 
         # Caption and icon
-        pygame.display.set_caption("UFO maze")
-        icon = pygame.image.load('icons/ufo_space.png')
+        pygame.display.set_caption("Ocean Life")
+        icon = pygame.image.load('turtle.png')
         pygame.display.set_icon(icon)
 
         if self.__enable_render is True:
@@ -72,10 +77,13 @@ class MazeView2D:
             self.__draw_maze()
 
             # show the portals
-            self.__draw_portals()
+            # self.__draw_portals()
 
-            # show the robot
+            # show the robot (box)
             self.__draw_robot()
+
+            # show the turtle
+            self.__draw_turtle()
 
             # show the entrance
             self.__draw_entrance()
@@ -103,6 +111,20 @@ class MazeView2D:
         except Exception:
             pass
 
+    def move_turtle(self, dir):
+        if dir not in self.__maze.STEPS.keys():
+            raise ValueError("dir cannot be %s. The only valid dirs are %s."
+                             % (str(dir), str(self.__maze.STEPS.keys())))
+
+        if self.__maze.is_open(self.player2, dir):
+
+            # update the drawing
+            self.__draw_turtle(transparency=0)
+            # if it's in a portal afterward
+            self.player2 = self.previous
+            self.__draw_turtle(transparency=255)
+    # move box
+
     def move_robot(self, dir):
         if dir not in self.__maze.STEPS.keys():
             raise ValueError("dir cannot be %s. The only valid dirs are %s."
@@ -112,22 +134,19 @@ class MazeView2D:
 
             # update the drawing
             self.__draw_robot(transparency=0)
-            # self.__draw_robot()
 
             # move the robot
+            self.previous = deepcopy(self.__robot)
             self.__robot += np.array(self.__maze.STEPS[dir])
-            # if it's in a portal afterward
-            if self.maze.is_portal(self.robot):
-                self.__robot = np.array(self.maze.get_portal(tuple(self.robot)).teleport(tuple(self.robot)))
-            self.__draw_robot(transparency=255)
-            # self.__draw_robot()
 
     def reset_robot(self):
-        # self.__draw_robot()
         self.__draw_robot(transparency=0)
-        self.__robot = np.zeros(2, dtype=int)
+        self.__robot = np.array((1, 0))
+
+    def reset_turtle(self):
         # self.__draw_robot()
-        self.__draw_robot(transparency=255)
+        self.__draw_turtle(transparency=0)
+        self.player2 = np.zeros(2, dtype=int)
 
     def __controller_update(self):
         if not self.__game_over:
@@ -138,10 +157,10 @@ class MazeView2D:
 
     def __view_update(self, mode="human"):
         if not self.__game_over:
-            # update the robot's position
+            # update the robot and box's position
             self.__draw_entrance()
             self.__draw_goal()
-            self.__draw_portals()
+            self.__draw_turtle()
             self.__draw_robot()
 
             # update the screen
@@ -154,7 +173,6 @@ class MazeView2D:
             return np.flipud(np.rot90(pygame.surfarray.array3d(pygame.display.get_surface())))
 
     def __draw_maze(self):
-
         if self.__enable_render is False:
             return
 
@@ -182,7 +200,6 @@ class MazeView2D:
                 self.__cover_walls(x, y, dirs)
 
     def __cover_walls(self, x, y, dirs, colour=(0, 0, 255, 15)):
-
         if self.__enable_render is False:
             return
 
@@ -210,62 +227,35 @@ class MazeView2D:
 
             pygame.draw.line(self.maze_layer, colour, line_head, line_tail)
 
-    def __draw_robot(self, transparency=255):
-
+    def __draw_robot(self, transparency=0):
         if self.__enable_render is False:
             return
 
-        x = int(self.__robot[0] * self.CELL_W + self.CELL_W * 0.000000000000000000000001 + 0.000000000000000000000001)
-        y = int(self.__robot[1] * self.CELL_H + self.CELL_H * 0.000000000000000000000001 + 0.000000000000000000000001)
+        x = int(self.__robot[0] * self.CELL_W + self.CELL_W * 0.01 + 0.01)
+        y = int(self.__robot[1] * self.CELL_H + self.CELL_H * 0.01 + 0.01)
 
-        self.screen.blit(self.player, (x, y))
+        self.screen.blit(self.player_box, (x, y))
         pygame.display.flip()
 
+    def __draw_turtle(self, transparency=0):
+        if self.__enable_render is False:
+            return
+
+        x = int(self.player2[0] * self.CELL_W + self.CELL_W * 0.01 + 0.01)
+        y = int(self.player2[1] * self.CELL_H + self.CELL_H * 0.01 + 0.01)
+
+        self.screen.blit(self.player_turtle, (x, y))
+        pygame.display.flip()
 
     def __draw_entrance(self):
         x_entr = int(self.entrance[0])
         y_entr = int(self.entrance[1])
         self.background.blit(self.entr, (x_entr, y_entr))
-        # self.__colour_cell(self.entrance, colour=colour, transparency=transparency)
 
     def __draw_goal(self):
         x_exit = int(self.goal[0] * self.CELL_W + 0.5 + 1)
         y_exit = int(self.goal[1] * self.CELL_H + 0.5 + 1)
         self.background.blit(self.exit, (x_exit, y_exit))
-        # pygame.display.flip()
-
-    # def __draw_goal(self, colour=(150, 0, 0), transparency=235):
-    #     self.__colour_cell(self.goal, colour=colour, transparency=transparency)
-
-    def __draw_portals(self, transparency=160):
-
-        if self.__enable_render is False:
-            return
-        colour_range = np.linspace(0, 255, len(self.maze.portals), dtype=int)
-        colour_i = 0
-        for portal in self.maze.portals:
-            colour = ((100 - colour_range[colour_i]) % 255, colour_range[colour_i], 0)
-            colour_i += 1
-            for location in portal.locations:
-                x_hole = int(location[0] * self.CELL_W + 0.5 + 1)
-                y_hole = int(location[1] * self.CELL_H + 0.5 + 1)
-
-                hole_rect = self.hole.get_rect()
-
-                # Apply some coloured scales to the fish
-                hole_scales = pygame.Surface((hole_rect.width, hole_rect.height))
-                hole_scales.fill(colour)
-                hole_scales.blit(self.hole, (0, 0))
-                hole_image = hole_scales
-
-                self.background.blit(hole_image, (x_hole, y_hole))
-        # colour_range = np.linspace(0, 255, len(self.maze.portals), dtype=int)
-        # colour_i = 0
-        # for portal in self.maze.portals:
-        #     colour = ((100 - colour_range[colour_i]) % 255, colour_range[colour_i], 0)
-        #     colour_i += 1
-        #     for location in portal.locations:
-        #         self.__colour_cell(location, colour=colour, transparency=transparency)
 
     def __colour_cell(self, cell, colour, transparency):
 

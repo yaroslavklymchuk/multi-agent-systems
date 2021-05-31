@@ -175,13 +175,12 @@ class QLearning:
 
 
 class ValueIteration:
-    def __init__(self, env, gamma, epsilon, make_action_proba, small, max_win_streak=100, debug=True, render_maze=True,
+    def __init__(self, env, gamma, epsilon, make_action_proba, max_win_streak=100, debug=True, render_maze=True,
                  recording_folder='./videos', enable_recording=True):
         self._env = env
         self.gamma = gamma
         self.epsilon = epsilon
         self.make_action_proba = make_action_proba
-        self.small  = small
         self._max_win_streak = max_win_streak
         self._debug = debug
         self._render_maze = render_maze
@@ -235,7 +234,6 @@ class ValueIteration:
     def simulate(self):
 
         self._env.render()
-        # state_0 = self._env.reset()
         num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t = self.get_simulation_parameters()
 
         total_rewards = []
@@ -269,7 +267,6 @@ class ValueIteration:
                     if not len(all_possible_actions):
                         continue
                     old_value = deepcopy(self.v[state])
-                    # new_v = -np.inf
 
                     temp_values = []
 
@@ -285,21 +282,6 @@ class ValueIteration:
                             main_prob = self.make_action_proba
                             additional_prob = (1 - self.make_action_proba) / (len(all_possible_actions) - 1)
 
-                        # another_actions = [another_action for another_action in self.all_possible_actions.get(state)
-                        #                    if another_action != action
-                        #                    ]
-                        # if not another_actions:
-                        #     continue
-                        # random_action = np.random.choice(another_actions)
-                        # random_coord = state + np.array(self._env.maze_view.maze.STEPS[random_action])
-                        #
-                        # v = self._env.calculate_reward(state) + self.gamma * ((1 - self.epsilon) * self.v[tuple(coord)] +
-                        #                                                       self.epsilon * self.v[tuple(random_coord)]
-                        #                                                       )
-                        # if v > new_v:
-                        #     new_v = deepcopy(v)
-                        #     self.policy[state] = action
-
                         add_value_sum = 0
                         for another_action in all_possible_actions:
                             if another_action != action:
@@ -312,23 +294,17 @@ class ValueIteration:
                     self.policy[state] = all_possible_actions[np.argmax(temp_values)]
 
                     best_chance = max(best_chance, np.abs(old_value - self.v[state]))
-                    # self.v[state] = new_v
-                    # best_chance = max(best_chance, np.abs(old_value - self.v[state]))
 
-            # print(best_chance)
-            if best_chance < self.small:
+            if best_chance < self.epsilon:
                 break
             iteration += 1
-
-            # print(self.policy)
-            # self._env.render()
 
             try:
                 state = self._env.reset()
             except:
                 state = np.zeros(2)
 
-            for t in range(100):
+            for t in range(50):
                 # Select an action
                 action = self.policy[tuple(state)]
                 # execute the action
@@ -346,6 +322,7 @@ class ValueIteration:
 
                 if self._debug:
                     if done or t >= max_t - 1:
+                        print('Iteration: {}'.format(iteration))
                         print("t = %d" % t)
                         print("Streaks: %d" % num_streaks)
                         print("Total reward: %f" % total_reward)
@@ -372,6 +349,7 @@ class ValueIteration:
 
             # It's considered done when it's solved over 120 times consecutively
                 if num_streaks > self._max_win_streak:
+                    print('BREAK')
                     break
 
                 total_rewards.append(total_reward)
