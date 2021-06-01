@@ -3,28 +3,26 @@ import sys
 from copy import deepcopy
 from gym.wrappers import Monitor
 
-from shedulers import get_epsilon_rate, get_learning_rate
-from policies import select_action
+from shedulers import SHEDULERS_MAPPING #get_epsilon_rate, get_learning_rate
+from policies import epsilon_greedy_policy
 
 
 class QLearning:
-    def __init__(self, env, num_episodes, min_epsilon_rate, min_learning_rate, learning_rate,
-                 epsilon_rate, gamma, max_win_streak=100, make_action_proba=1, learning_rate_is_constant=False,
-                 epsilon_rate_is_constant=False, debug=True, render_maze=True, recording_folder='./videos',
+    def __init__(self, env, num_episodes, learning_rate, epsilon, learning_rate_shedule, epsilon_shedule, gamma,
+                 max_win_streak=100, make_action_proba=1,
+                 debug=True, render_maze=True, recording_folder='./videos',
                  enable_recording=True
                  ):
 
         self._env = env
         self._num_episodes = num_episodes
-        self._min_epsilon_rate = min_epsilon_rate
-        self._min_learning_rate = min_learning_rate
         self._learning_rate = learning_rate
-        self._epsilon_rate = epsilon_rate
+        self._epsilon = epsilon
         self._gamma = gamma
         self._max_win_streak = max_win_streak
         self._make_action_proba = make_action_proba
-        self._learning_rate_is_constant = learning_rate_is_constant
-        self._epsilon_rate_is_constant = epsilon_rate_is_constant
+        self._learning_rate_shedule = learning_rate_shedule
+        self._epsilon_shedule = epsilon_shedule
         self._debug = debug
         self._render_maze = render_maze
         self._recording_folder = recording_folder
@@ -38,12 +36,12 @@ class QLearning:
 
         state_bounds = list(zip(self._env.observation_space.low, self._env.observation_space.high))
 
-        decay_rate = np.prod(maze_size, dtype=float) / 10.0
+        # decay_rate = np.prod(maze_size, dtype=float) / 10.0
 
         max_t = np.prod(maze_size, dtype=int) * 100
         solved_t = np.prod(maze_size, dtype=int)
 
-        return num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t
+        return num_buckets, num_actions, state_bounds, max_t, solved_t
 
     @staticmethod
     def state_to_bucket(state, state_bounds, num_buckets):
@@ -67,19 +65,32 @@ class QLearning:
         total_streaks = []
         steps_qty = []
 
-        num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t = self.get_simulation_parameters()
+        num_buckets, num_actions, state_bounds, max_t, solved_t = self.get_simulation_parameters()
 
         q_table = np.zeros(num_buckets + (num_actions,), dtype=float)
 
-        if not self._epsilon_rate_is_constant:
-            epsilon_rate_setup = get_epsilon_rate(0, self._min_epsilon_rate, decay_rate)
+        if not self._epsilon_shedule:
+            eps = self._epsilon
         else:
-            epsilon_rate_setup = self._epsilon_rate
+            epsilon_shedule_rule = list(self._epsilon_shedule.keys())[0]
+            if epsilon_shedule_rule == 'time_based_sheduler':
+                smoothing_coefficient = self._epsilon_shedule.get(epsilon_shedule_rule)
+                eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(self._epsilon, smoothing_coefficient)
+            else:
+                decay = self._epsilon_shedule.get(epsilon_shedule_rule)
+                eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(0, self._epsilon, decay)
 
-        if not self._learning_rate_is_constant:
-            learning_rate_setup = get_learning_rate(0, self._min_learning_rate, decay_rate)
+        if not self._learning_rate_shedule:
+            learning_rate = self._learning_rate
         else:
-            learning_rate_setup = self._learning_rate
+            learning_rate_shedule_rule = list(self._learning_rate_shedule.keys())[0]
+            if learning_rate_shedule_rule == 'time_based_sheduler':
+                smoothing_coefficient = self._learning_rate_shedule.get(learning_rate_shedule_rule)
+                learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(self._learning_rate,
+                                                                                  smoothing_coefficient)
+            else:
+                decay = self._learning_rate_shedule.get(learning_rate_shedule_rule)
+                learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(0, self._learning_rate, decay)
 
         num_streaks = 0
 
@@ -96,7 +107,7 @@ class QLearning:
 
             for t in range(max_t):
                 # Select an action
-                action = select_action(self._env, q_table, state_0, epsilon_rate_setup)
+                action = epsilon_greedy_policy(self._env, q_table, state_0, eps)
                 # execute the action
                 if np.random.choice([True, False], p=[self._make_action_proba, 1 - self._make_action_proba]):
                     obv, reward, done, _ = self._env.step(action)
@@ -110,7 +121,7 @@ class QLearning:
 
                 # Update the Q based on the result
                 best_q = np.amax(q_table[state])
-                q_table[state_0 + (action,)] += learning_rate_setup * (
+                q_table[state_0 + (action,)] += learning_rate * (
                         reward + self._gamma * (best_q) - q_table[state_0 + (action,)])
 
                 # Setting up for the next iteration
@@ -122,8 +133,8 @@ class QLearning:
                     if done or t >= max_t - 1:
                         print("\nEpisode = %d" % episode)
                         print("t = %d" % t)
-                        print("Explore rate: %f" % epsilon_rate_setup)
-                        print("Learning rate: %f" % learning_rate_setup)
+                        print("Explore rate: %f" % eps)
+                        print("Learning rate: %f" % learning_rate)
                         print("Streaks: %d" % num_streaks)
                         print("Total reward: %f" % total_reward)
                         print("Average Streaks: %f" % (num_streaks / (episode + 1)))
@@ -151,10 +162,25 @@ class QLearning:
             if num_streaks > self._max_win_streak:
                 break
 
-            if not self._epsilon_rate_is_constant:
-                epsilon_rate_setup = get_epsilon_rate(episode, self._min_epsilon_rate, decay_rate)
-            if not self._learning_rate_is_constant:
-                learning_rate_setup = get_learning_rate(episode, self._min_learning_rate, decay_rate)
+            if self._epsilon_shedule:
+                epsilon_shedule_rule = list(self._epsilon_shedule.keys())[0]
+                if epsilon_shedule_rule == 'time_based_sheduler':
+                    smoothing_coefficient = self._epsilon_shedule.get(epsilon_shedule_rule)
+                    eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(self._epsilon, smoothing_coefficient)
+                else:
+                    decay = self._epsilon_shedule.get(epsilon_shedule_rule)
+                    eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(episode, self._epsilon, decay)
+
+            if self._learning_rate_shedule:
+                learning_rate_shedule_rule = list(self._learning_rate_shedule.keys())[0]
+                if learning_rate_shedule_rule == 'time_based_sheduler':
+                    smoothing_coefficient = self._learning_rate_shedule.get(learning_rate_shedule_rule)
+                    learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(self._learning_rate,
+                                                                                      smoothing_coefficient)
+                else:
+                    decay = self._learning_rate_shedule.get(learning_rate_shedule_rule)
+                    learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(episode, self._learning_rate,
+                                                                                      decay)
 
             total_rewards.append(total_reward)
             total_streaks.append(num_streaks)
@@ -208,12 +234,12 @@ class ValueIteration:
 
         state_bounds = list(zip(self._env.observation_space.low, self._env.observation_space.high))
 
-        decay_rate = np.prod(maze_size, dtype=float) / 10.0
+        # decay_rate = np.prod(maze_size, dtype=float) / 10.0
 
         max_t = np.prod(maze_size, dtype=int) * 100
         solved_t = np.prod(maze_size, dtype=int)
 
-        return num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t
+        return num_buckets, num_actions, state_bounds, max_t, solved_t
 
     @staticmethod
     def state_to_bucket(state, state_bounds, num_buckets):
@@ -234,7 +260,7 @@ class ValueIteration:
     def simulate(self):
 
         self._env.render()
-        num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t = self.get_simulation_parameters()
+        num_buckets, num_actions, state_bounds, max_t, solved_t = self.get_simulation_parameters()
 
         total_rewards = []
         total_streaks = []

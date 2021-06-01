@@ -68,10 +68,8 @@ class MazeEnv(gym.Env):
             reward = 1
         elif any((np.array_equal(state, location) for location in all_portals_locations)):
             reward = -0.4 / (self.maze_size[0]*self.maze_size[1])
-            #reward = -10
         else:
             reward = -0.1 / (self.maze_size[0]*self.maze_size[1])
-            #reward = 0
 
         return reward
 
