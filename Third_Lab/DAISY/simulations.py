@@ -3,7 +3,7 @@ import sys
 from gym.wrappers import Monitor
 from copy import deepcopy
 
-from shedulers import get_explore_rate, get_learning_rate
+from shedulers import SHEDULERS_MAPPING #get_explore_rate, get_learning_rate
 from policies import select_action
 
 
@@ -15,12 +15,10 @@ def get_simulation_parameters(env):
 
     state_bounds = list(zip(env.observation_space.low, env.observation_space.high))
 
-    decay_rate = np.prod(maze_size, dtype=float) / 10.0
-
     max_t = np.prod(maze_size, dtype=int) * 100
     solved_t = np.prod(maze_size, dtype=int)
 
-    return num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t
+    return num_buckets, num_actions, state_bounds, max_t, solved_t
 
 
 def state_to_bucket(state, state_bounds, num_buckets):
@@ -39,8 +37,7 @@ def state_to_bucket(state, state_bounds, num_buckets):
     return tuple(bucket_indice)
 
 
-def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_rate, min_learning_rate, learning_rate,
-                        explore_rate, discount_factor, learning_rate_is_constant=False, explore_rate_is_constant=False,
+def simulate_q_learning(q_table, env, num_episodes, epsilon, lr, epsilon_shedule, lr_shedule, gamma, max_win_streak,
                         debug=True, render_maze=True
                         ):
 
@@ -48,17 +45,39 @@ def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_
     total_streaks = []
     steps_qty = []
 
-    num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t = get_simulation_parameters(env)
+    num_buckets, num_actions, state_bounds, max_t, solved_t = get_simulation_parameters(env)
 
-    if not explore_rate_is_constant:
-        explore_rate_setup = get_explore_rate(0, min_explore_rate, decay_rate)
+    if not epsilon_shedule:
+        eps = epsilon
     else:
-        explore_rate_setup = explore_rate
+        epsilon_shedule_rule = list(epsilon_shedule.keys())[0]
+        if epsilon_shedule_rule == 'smoothing_sheduler':
+            smoothing_coefficient = epsilon_shedule.get(epsilon_shedule_rule)
+            eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(epsilon, smoothing_coefficient)
+        else:
+            decay = epsilon_shedule.get(epsilon_shedule_rule)
+            eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(0, epsilon, decay)
 
-    if not learning_rate_is_constant:
-        learning_rate_setup = get_learning_rate(0, min_learning_rate, decay_rate)
+    if not lr_shedule:
+        learning_rate = lr
     else:
-        learning_rate_setup = learning_rate
+        learning_rate_shedule_rule = list(lr_shedule.keys())[0]
+        if learning_rate_shedule_rule == 'smoothing_sheduler':
+            smoothing_coefficient = lr_shedule.get(learning_rate_shedule_rule)
+            learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(lr, smoothing_coefficient)
+        else:
+            decay = lr_shedule.get(learning_rate_shedule_rule)
+            learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(0, lr, decay)
+
+    # if not explore_rate_is_constant:
+    #     explore_rate_setup = get_explore_rate(0, min_explore_rate, decay_rate)
+    # else:
+    #     explore_rate_setup = explore_rate
+    #
+    # if not learning_rate_is_constant:
+    #     learning_rate_setup = get_learning_rate(0, min_learning_rate, decay_rate)
+    # else:
+    #     learning_rate_setup = learning_rate
 
     num_streaks = 0
 
@@ -66,7 +85,10 @@ def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_
 
     for episode in range(num_episodes):
         # Reset the environment
-        obv = env.reset()
+        try:
+            obv = env.reset()
+        except:
+            obv = np.zeros(2)
         # the initial state
         state_0 = state_to_bucket(obv, state_bounds, num_buckets)
         total_reward = 0
@@ -75,7 +97,7 @@ def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_
 
         for t in range(max_t):
             # Select an action
-            action = select_action(env, q_table, state_0, explore_rate_setup)
+            action = select_action(env, q_table, state_0, eps)
             # execute the action
             obv, reward, done, _ = env.step(action)
 
@@ -85,8 +107,8 @@ def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_
 
             # Update the Q based on the result
             best_q = np.amax(q_table[state])
-            q_table[state_0 + (action,)] += learning_rate_setup * (
-                    reward + discount_factor * (best_q) - q_table[state_0 + (action,)])
+            q_table[state_0 + (action,)] += learning_rate * (
+                    reward + gamma * (best_q) - q_table[state_0 + (action,)])
 
             # Setting up for the next iteration
             state_0 = state
@@ -97,8 +119,8 @@ def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_
                 if done or t >= max_t - 1:
                     print("\nEpisode = %d" % episode)
                     print("t = %d" % t)
-                    print("Explore rate: %f" % explore_rate_setup)
-                    print("Learning rate: %f" % learning_rate_setup)
+                    print("Explore rate: %f" % eps)
+                    print("Learning rate: %f" % learning_rate)
                     print("Streaks: %d" % num_streaks)
                     print("Total reward: %f" % total_reward)
                     print("Average Streaks: %d" % (num_streaks / (episode + 1)))
@@ -126,10 +148,29 @@ def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_
         if num_streaks > max_win_streak:
             break
 
-        if not explore_rate_is_constant:
-            explore_rate_setup = get_explore_rate(episode, min_explore_rate, decay_rate)
-        if not learning_rate_is_constant:
-            learning_rate_setup = get_learning_rate(episode, min_learning_rate, decay_rate)
+        if epsilon_shedule:
+            epsilon_shedule_rule = list(epsilon_shedule.keys())[0]
+            if epsilon_shedule_rule == 'time_based_sheduler':
+                smoothing_coefficient = epsilon_shedule.get(epsilon_shedule_rule)
+                eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(epsilon, smoothing_coefficient)
+            else:
+                decay = epsilon_shedule.get(epsilon_shedule_rule)
+                eps = SHEDULERS_MAPPING.get(epsilon_shedule_rule)(episode, epsilon, decay)
+
+        if lr_shedule:
+            learning_rate_shedule_rule = list(lr_shedule.keys())[0]
+            if learning_rate_shedule_rule == 'time_based_sheduler':
+                smoothing_coefficient = lr_shedule.get(learning_rate_shedule_rule)
+                learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(learning_rate,
+                                                                                  smoothing_coefficient)
+            else:
+                decay = lr_shedule.get(learning_rate_shedule_rule)
+                learning_rate = SHEDULERS_MAPPING.get(learning_rate_shedule_rule)(episode, learning_rate, decay)
+
+        # if not explore_rate_is_constant:
+        #     explore_rate_setup = get_explore_rate(episode, min_explore_rate, decay_rate)
+        # if not learning_rate_is_constant:
+        #     learning_rate_setup = get_learning_rate(episode, min_learning_rate, decay_rate)
 
         total_rewards.append(total_reward)
         total_streaks.append(num_streaks)
@@ -138,24 +179,23 @@ def simulate_q_learning(q_table, env, num_episodes, max_win_streak, min_explore_
     return total_rewards, total_streaks, steps_qty
 
 
-def qlearning_main(env, num_episodes, min_explore_rate, min_learning_rate, learning_rate, explore_rate,
-         discount_factor, max_win_streak=100, learning_rate_is_constant=False, explore_rate_is_constant=False,
-         debug=True, render_maze=True, recording_folder='./videos', enable_recording=True):
+def qlearning_main(env, num_episodes, epsilon, lr, epsilon_shedule, lr_shedule, gamma, max_win_streak,
+                   debug=True, render_maze=True, recording_folder='./videos', enable_recording=True):
 
     env = Monitor(env, recording_folder, video_callable=lambda episode: True, force=True)
-    num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t = get_simulation_parameters(env)
+    num_buckets, num_actions, state_bounds, max_t, solved_t = get_simulation_parameters(env)
 
     q_table = np.zeros(num_buckets + (num_actions,), dtype=float)
 
     if enable_recording:
         env._start(recording_folder, video_callable=lambda episode: True, force=True)
 
-    total_rewards, total_streaks, steps_qty = simulate_q_learning(q_table, env, num_episodes, max_win_streak,
-                                                                  min_explore_rate, min_learning_rate, learning_rate,
-                                                                  explore_rate, discount_factor,
-                                                                  learning_rate_is_constant=learning_rate_is_constant,
-                                                                  explore_rate_is_constant=explore_rate_is_constant,
-                                                                  debug=debug, render_maze=render_maze
+    total_rewards, total_streaks, steps_qty = simulate_q_learning(env=env, q_table=q_table, num_episodes=num_episodes,
+                                                                  epsilon=epsilon, lr=lr,
+                                                                  epsilon_shedule=epsilon_shedule,
+                                                                  lr_shedule=lr_shedule, gamma=gamma,
+                                                                  max_win_streak=max_win_streak, debug=debug,
+                                                                  render_maze=render_maze
                                                                   )
 
     return total_rewards, total_streaks, steps_qty
@@ -165,7 +205,7 @@ def simulate_value_iteration(env, gamma, epsilon, v, policy, all_possible_action
                              debug=True, render_maze=True):
 
     env.render()
-    num_buckets, num_actions, state_bounds, decay_rate, max_t, solved_t = get_simulation_parameters(env)
+    num_buckets, num_actions, state_bounds, max_t, solved_t = get_simulation_parameters(env)
 
     total_rewards = []
     total_streaks = []

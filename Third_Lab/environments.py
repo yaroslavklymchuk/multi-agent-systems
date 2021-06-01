@@ -14,11 +14,11 @@ class MazeEnv(gym.Env):
 
     ACTION = ["N", "S", "E", "W"]
 
-    def __init__(self, maze_size=None, num_portals=0, enable_render=True):
+    def __init__(self, maze_size=None, num_portals=0, portal_payoff=-0.4, enable_render=True):
 
         self.viewer = None
         self.enable_render = enable_render
-
+        self.portal_payoff = portal_payoff
         self.maze_view = MazeView2D(maze_name="OpenAI Gym - Maze (%d x %d)" % maze_size,
                                     maze_size=maze_size, screen_size=(640, 640),
                                     num_portals=num_portals, enable_render=enable_render)
@@ -67,7 +67,7 @@ class MazeEnv(gym.Env):
         if np.array_equal(state, self.maze_view.goal):
             reward = 1
         elif any((np.array_equal(state, location) for location in all_portals_locations)):
-            reward = -0.4 / (self.maze_size[0]*self.maze_size[1])
+            reward = self.portal_payoff / (self.maze_size[0]*self.maze_size[1])
         else:
             reward = -0.1 / (self.maze_size[0]*self.maze_size[1])
 
